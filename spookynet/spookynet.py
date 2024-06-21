@@ -1203,6 +1203,7 @@ class SpookyNet(nn.Module):
         """
         if batch_seg is None:  # assume a single batch
             batch_seg = Z.new_zeros(Z.size(0))
+            
         if use_forces:
             (
                 energy,
