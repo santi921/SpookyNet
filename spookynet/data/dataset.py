@@ -120,10 +120,11 @@ def load_dataset(
             "Q": charge,
             "S": spin
         }
-        
+        #print(elem)
+
         dataset.molecules.append(molecule_dict)
         nm += 1
-
+    print("... Done loading dataset")
     dataset.N = nm
 
     return dataset

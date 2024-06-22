@@ -130,16 +130,7 @@ def collate_molecule(samples):
         batch.S.extend([S])
         cur_idx_i, cur_idx_j = get_idx(
             pos
-        ) 
-        cur_idx_i += batch.Z.extend(elem)
-        batch.R.extend(pos)
-        batch.E.append(energy)  # target energy
-        batch.F.extend(force)  # target forces
-        batch.Q.extend([Q])
-        batch.S.extend([S])
-        cur_idx_i, cur_idx_j = get_idx(
-            pos
-        ) 
+        )
         cur_idx_i += na
         cur_idx_j += na
         batch.idx_i.extend(cur_idx_i)

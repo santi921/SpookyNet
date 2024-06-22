@@ -352,5 +352,7 @@ def compute_rmse_dataloader(dataloader, model):
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     #train() # constructs all batches at once, memory intensive
-    #train_new() # train from converted molecules dataset w/ batches
-    train_tabular() # trains from df directly 
+    #train_tabular() # trains from df directly 
+    
+    train_new() # train from converted molecules dataset w/ batches
+    
