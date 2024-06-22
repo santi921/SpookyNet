@@ -120,10 +120,8 @@ def train_tabular():
     BEST_POINT = "best.pt"
     START_LR = 1e-2
 
-    #model = SpookyNet().to(torch.float32).cuda()
     model = SpookyNetLightning().to(torch.float32)#.cuda()
-    #model.train()
-
+    
     optimizer = torch.optim.Adam(model.parameters(), lr=START_LR, amsgrad=True)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.5, patience=50, threshold=0
@@ -131,12 +129,7 @@ def train_tabular():
 
     df = pd.read_json("/home/santiagovargas/dev/berkeley_pes/data/test_libe.json")
 
-    #training = load_batches(df)
-    #validation = load_batches(df)
-    #training_dataset = load_dataset(df)
-
     batch_size = 100
-    #print("training dataset length: ", len(training_dataset))
     dataset = SpookyDatasetTabular(df)
 
     training_dataloader = DataloaderTabular(
@@ -146,66 +139,7 @@ def train_tabular():
         dataset, batch_size=batch_size, shuffle=True
     )
 
-    """
-    mse_sum = torch.nn.MSELoss(reduction="sum")
-    mse_sum_forces = torch.nn.MSELoss(reduction="sum")
-    mse_sum_dipole = torch.nn.MSELoss(reduction="sum")
-
-    for epoch in range(NUM_EPOCHES):
-        
-        for batch in training_dataloader:
-            
-            N = batch.N
-            res_forces = model.forward(
-                Z=batch.Z,
-                Q=batch.Q,
-                S=batch.S,
-                R=batch.R,
-                idx_i=batch.idx_i,
-                idx_j=batch.idx_j,
-                batch_seg=batch.batch_seg,
-                num_batch=N,
-                create_graph=True,
-                use_forces=True, 
-                use_dipole=True
-            )
-
-            E_pred = res_forces[0]
-            F_pred = res_forces[1]
-            dipole = res_forces[2]
-            partial_charges = res_forces[5]
-            
-            
-            loss = (
-                mse_sum(batch.E, E_pred)
-                + mse_sum_forces(batch.F, F_pred)
-                
-            ) / N
-            #+ mse_sum_dipole(dipole, dipole_pred)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            learning_rate = optimizer.param_groups[0]["lr"]
-
-        
-        rmse, force_rmse = compute_rmse_dataloader(validation_dataloader, model)
-        rmse_sum = rmse + force_rmse
-        
-        if scheduler.is_better(rmse_sum, scheduler.best):
-            model.save(BEST_POINT)
-        scheduler.step(rmse_sum)
-        if epoch % 10 == 0:
-            print(
-                "Epoch: {} / LR: {} / E RMSE: {:.3f} / F RMSE: {:.3f} / Best: {:.3f}".format(
-                    scheduler.last_epoch,
-                    learning_rate,
-                    rmse,
-                    force_rmse,
-                    scheduler.best,
-                )
-            )
-    """
+    
     #logger_wb = WandbLogger(
     #    project="spooky_dev", name="test_logs_transfer"
     #)
@@ -233,11 +167,11 @@ def train_tabular():
             max_epochs=1000,
             accelerator="gpu",
             devices=1,
-            num_nodes=1,
-            accumulate_grad_batches=1,
+            #num_nodes=1,
+            #accumulate_grad_batches=1,
             strategy="auto",
             enable_progress_bar=True,
-            gradient_clip_val=100.0,
+            #gradient_clip_val=100.0,
             callbacks=[
                 early_stopping_callback,
                 lr_monitor,
@@ -250,62 +184,7 @@ def train_tabular():
 
     trainer.fit(model, training_dataloader, validation_dataloader)
     
-    """for epoch in range(NUM_EPOCHES):
-
-        for batch in training_dataloader:
-            
-            N = batch.N
-            res_forces = model.forward(
-                Z=batch.Z,
-                Q=batch.Q,
-                S=batch.S,
-                R=batch.R,
-                idx_i=batch.idx_i,
-                idx_j=batch.idx_j,
-                batch_seg=batch.batch_seg,
-                num_batch=N,
-                create_graph=True,
-                use_forces=True, 
-                use_dipole=True
-            )
-
-            E_pred = res_forces[0]
-            F_pred = res_forces[1]
-            dipole = res_forces[2]
-            partial_charges = res_forces[5]
-            
-            
-            loss = (
-                mse_sum(batch.E, E_pred)
-                + mse_sum_forces(batch.F, F_pred)
-                
-            ) / N
-            #+ mse_sum_dipole(dipole, dipole_pred)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            learning_rate = optimizer.param_groups[0]["lr"]
     
-        
-    rmse, force_rmse = compute_rmse_dataloader(validation_dataloader, model)
-    rmse_sum = rmse + force_rmse
-    
-    if scheduler.is_better(rmse_sum, scheduler.best):
-        model.save(BEST_POINT)
-    scheduler.step(rmse_sum)
-    if epoch % 10 == 0:
-        print(
-            "Epoch: {} / LR: {} / E RMSE: {:.3f} / F RMSE: {:.3f} / Best: {:.3f}".format(
-                scheduler.last_epoch,
-                learning_rate,
-                rmse,
-                force_rmse,
-                scheduler.best,
-            )
-        )
-    """
-
 def train():
     NUM_EPOCHES = 1000
     BEST_POINT = "best.pt"
@@ -316,7 +195,10 @@ def train():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=START_LR, amsgrad=True)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.5, patience=50, threshold=0
+        optimizer, 
+        factor=0.5, 
+        patience=50, 
+        threshold=0
     )
 
     df = pd.read_json("/home/santiagovargas/dev/berkeley_pes/data/test_libe.json")

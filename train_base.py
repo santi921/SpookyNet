@@ -54,6 +54,7 @@ def train_new():
         for batch in training_dataloader:
             
             N = batch.N
+            N_atoms = len(batch.Z)
 
             res_forces = model.energy_and_forces(
                 Z=batch.Z,
@@ -73,9 +74,8 @@ def train_new():
             
             loss = (
                 mse_sum(batch.E, E_pred)
-                + mse_sum_forces(batch.F, F_pred)
-                
-            ) / N
+            ) / N_atoms
+            + mse_sum_forces(batch.F, F_pred) / N 
             #+ mse_sum_dipole(dipole, dipole_pred)
 
             optimizer.zero_grad()
@@ -140,6 +140,7 @@ def train_tabular():
         for batch in training_dataloader:
             
             N = batch.N
+            N_atoms = len(batch.Z)
             res_forces = model.forward(
                 Z=batch.Z,
                 Q=batch.Q,
@@ -161,10 +162,9 @@ def train_tabular():
             
             
             loss = (
-                mse_sum(batch.E, E_pred)
-                + mse_sum_forces(batch.F, F_pred)
-                
-            ) / N
+                mse_sum(E, E_pred)
+            ) / N_atoms
+            + mse_sum_forces(F, F_pred) / N 
             #+ mse_sum_dipole(dipole, dipole_pred)
 
             optimizer.zero_grad()
@@ -244,9 +244,8 @@ def train():
             # print(F.shape)
             loss = (
                 mse_sum(E, E_pred)
-                + mse_sum_forces(F, F_pred)
-                
             ) / N_atoms
+            + mse_sum_forces(F, F_pred) / N 
             #+ mse_sum_dipole(dipole, dipole_pred)
 
             optimizer.zero_grad()
@@ -309,7 +308,7 @@ def compute_rmse(batches, model):
         count_atoms += N_atoms
 
     model.train()
-    return math.sqrt(total_mse / count_atoms), math.sqrt(total_forces_mse / count_atoms)
+    return math.sqrt(total_mse / count_atoms), math.sqrt(total_forces_mse / count)
 
 
 def compute_rmse_dataloader(dataloader, model):
@@ -346,7 +345,7 @@ def compute_rmse_dataloader(dataloader, model):
         count_atoms += N_atoms
 
     model.train()
-    return math.sqrt(total_mse / count_atoms), math.sqrt(total_forces_mse / count_atoms)
+    return math.sqrt(total_mse / count_atoms), math.sqrt(total_forces_mse / count)
 
 
 if __name__ == "__main__":
