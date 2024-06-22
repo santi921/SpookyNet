@@ -147,11 +147,14 @@ def collate_molecule(samples):
 class DataloaderTabular(DataLoader):
     def __init__(self, dataset, **kwargs):
         self.df = dataset
+        # filter **kwargs for collate_fn
+        kwargs = {k: v for k, v in kwargs.items() if k != "collate_fn"}
         super(DataloaderTabular, self).__init__(dataset, collate_fn=collate_tabular, **kwargs)  
 
 class DataloaderMolecules(DataLoader):
     def __init__(self, dataset, **kwargs):
         self.dataset = dataset
+        kwargs = {k: v for k, v in kwargs.items() if k != "collate_fn"}
         super(DataloaderMolecules, self).__init__(dataset, collate_fn=collate_molecule, **kwargs)
 
 

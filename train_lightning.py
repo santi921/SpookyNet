@@ -116,16 +116,13 @@ def train_new():
 
 
 def train_tabular():
-    NUM_EPOCHES = 1000
-    BEST_POINT = "best.pt"
-    START_LR = 1e-2
 
-    model = SpookyNetLightning().to(torch.float32)#.cuda()
+    model = SpookyNetLightning().to(torch.float32).cuda()
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=START_LR, amsgrad=True)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.5, patience=50, threshold=0
-    )
+    #optimizer = torch.optim.Adam(model.parameters(), lr=START_LR, amsgrad=True)
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #    optimizer, factor=0.5, patience=50, threshold=0
+    #)
 
     df = pd.read_json("/home/santiagovargas/dev/berkeley_pes/data/test_libe.json")
 
@@ -133,10 +130,18 @@ def train_tabular():
     dataset = SpookyDatasetTabular(df)
 
     training_dataloader = DataloaderTabular(
-        dataset, batch_size=batch_size, shuffle=True
+        dataset, 
+        batch_size=batch_size, 
+        shuffle=True,
+        num_workers=4, 
+        persistent_workers=True
     )
     validation_dataloader = DataloaderTabular(
-        dataset, batch_size=batch_size, shuffle=True
+        dataset, 
+        batch_size=batch_size, 
+        shuffle=False, 
+        num_workers=4,
+        persistent_workers=True
     )
 
     
@@ -166,10 +171,10 @@ def train_tabular():
     trainer = pl.Trainer(
             max_epochs=1000,
             accelerator="gpu",
-            devices=1,
+            devices=[0, 1],
             #num_nodes=1,
             #accumulate_grad_batches=1,
-            strategy="auto",
+            strategy="ddp",
             enable_progress_bar=True,
             #gradient_clip_val=100.0,
             callbacks=[

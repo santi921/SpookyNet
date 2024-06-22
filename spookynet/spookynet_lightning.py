@@ -439,24 +439,24 @@ class SpookyNetLightning(pl.LightningModule):
         self.test_F_rl2 = torchmetrics.MeanSquaredError(squared=False)
         
         # move metrics to correct device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.train_E_l1.to(device)
-        self.train_E_rl2.to(device)
-        self.train_F_l1.to(device)
-        self.train_F_rl2.to(device)
+        #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.train_E_l1.cuda()
+        self.train_E_rl2.cuda()
+        self.train_F_l1.cuda()
+        self.train_F_rl2.cuda()
 
-        self.val_E_l1.to(device)
-        self.val_E_rl2.to(device)
-        self.val_F_l1.to(device)
-        self.val_F_rl2.to(device)
+        self.val_E_l1.cuda()
+        self.val_E_rl2.cuda()
+        self.val_F_l1.cuda()
+        self.val_F_rl2.cuda()
 
-        self.test_E_l1.to(device)
-        self.test_E_rl2.to(device)
-        self.test_F_l1.to(device)
-        self.test_F_rl2.to(device)
+        self.test_E_l1.cuda()
+        self.test_E_rl2.cuda()
+        self.test_F_l1.cuda()
+        self.test_F_rl2.cuda()
 
 
-        self.loss = self.loss_function(device)
+        self.loss = self.loss_function()
 
     def reset_parameters(self) -> None:
         """ Initialize parameters randomly. """
@@ -761,8 +761,11 @@ class SpookyNetLightning(pl.LightningModule):
 
         # mask for efficient attention
         if num_batch > 1 and batch_seg is not None:
-            one_hot = nn.functional.one_hot(batch_seg).to(
-                dtype=R.dtype, device=R.device
+            #one_hot = nn.functional.one_hot(batch_seg).to(
+            #    dtype=R.dtype, device=R.device
+            #)
+            one_hot = nn.functional.one_hot(batch_seg).type_as(
+                R
             )
             mask = one_hot @ one_hot.transpose(-1, -2)
         else:
@@ -822,9 +825,14 @@ class SpookyNetLightning(pl.LightningModule):
         # initialize feature vectors
         z = self.nuclear_embedding(Z)
         if num_batch > 1:
+            #electronic_mask = (
+            #    nn.functional.one_hot(batch_seg)
+            #    .to(dtype=rij.dtype, device=rij.device)
+            #    .transpose(-1, -2)
+            #)
             electronic_mask = (
                 nn.functional.one_hot(batch_seg)
-                .to(dtype=rij.dtype, device=rij.device)
+                .type_as(rij)
                 .transpose(-1, -2)
             )
         else:
@@ -881,8 +889,11 @@ class SpookyNetLightning(pl.LightningModule):
 
         # compute ZBL inspired short-range repulsive contributions
         if self.use_zbl_repulsion:
+            #ea_rep = self.zbl_repulsion_energy(
+            #    N, Z.to(self.dtype), sr_rij, cutoff_values, sr_idx_i, sr_idx_j
+            #)
             ea_rep = self.zbl_repulsion_energy(
-                N, Z.to(self.dtype), sr_rij, cutoff_values, sr_idx_i, sr_idx_j
+                N, Z.type_as(sr_rij), sr_rij, cutoff_values, sr_idx_i, sr_idx_j
             )
         else:
             ea_rep = ea.new_zeros(N)
@@ -1362,7 +1373,7 @@ class SpookyNetLightning(pl.LightningModule):
         return energy, forces, dipole, f, ea, qa, ea_rep, ea_ele, ea_vdw, pa, c6
 
 
-    def loss_function(self, device):
+    def loss_function(self):
         
         loss_function = {
             "E": torchmetrics.MeanSquaredError(),
@@ -1372,7 +1383,7 @@ class SpookyNetLightning(pl.LightningModule):
             loss_function["D"] = torchmetrics.MeanSquaredError()
 
         for key in loss_function.keys():
-            loss_function[key].to(device)
+            loss_function[key].cuda()
 
         return loss_function
     
