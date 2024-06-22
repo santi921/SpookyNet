@@ -1,2 +1,6 @@
 *pyc
 *txt
+*yaml
+*tfevents*
+*ckpt
+*ipynb

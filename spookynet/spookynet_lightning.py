@@ -1,10 +1,13 @@
 import math
+import time
 import torch
 import torch.nn as nn
 from .functional import cutoff_function
 from .modules import *
 from typing import Tuple, Optional
 import pytorch_lightning as pl
+from torch.optim import lr_scheduler
+import torchmetrics
 
 # backwards compatibility with old versions of pytorch
 try:
@@ -13,7 +16,7 @@ except:
     from torch import norm
 
 
-class SpookyNet(pl.LightningModule):
+class SpookyNetLightning(pl.LightningModule):
     """
     Neural network for PES construction augmented with optional explicit terms
     for short-range repulsion, electrostatics and dispersion and explicit nonlocal
@@ -133,7 +136,6 @@ class SpookyNet(pl.LightningModule):
         basis_functions="exp-bernstein",
         exp_weighting=True,
         cutoff=5.291772105638412,  # 10 a0 in A
-        lr_cutoff=None,
         use_zbl_repulsion=True,
         use_electrostatics=True,
         use_d4_dispersion=True,
@@ -146,11 +148,15 @@ class SpookyNet(pl.LightningModule):
         zero_init=True,
         learning_rate=1e-3,
         weight_decay=1e-4,
-        lr_patience=10,
+        lr_patience=50,
+        lr_cutoff=1e-7,
         lr_factor=0.5,
+        dipole=False, 
+        scheduler_name="reduce_on_plateau"
     ) -> None:
         """ Initializes the SpookyNet class. """
-        super(SpookyNet, self).__init__()
+        super(SpookyNetLightning, self).__init__()
+        #super().__init__()
         self.learning_rate = learning_rate
 
         # load state from a file (if load_from is not None) and overwrite
@@ -186,6 +192,8 @@ class SpookyNet(pl.LightningModule):
             lr_patience = saved_state["lr_patience"]
             lr_factor = saved_state["lr_factor"]
             weight_decay = saved_state["weight_decay"]
+            dipole = saved_state["dipole"]
+            scheduler_name = saved_state["scheduler_name"]
             # compatibility with older code
             if "use_irreps" in saved_state:
                 use_irreps = saved_state["use_irreps"]
@@ -228,6 +236,8 @@ class SpookyNet(pl.LightningModule):
         self.lr_decay = lr_factor
         self.weight_decay = weight_decay
         self.lr_patience = lr_patience
+        self.dipole = dipole
+        self.scheduler_name = scheduler_name
 
         params = {
             "activation": activation,
@@ -261,10 +271,14 @@ class SpookyNet(pl.LightningModule):
             "lr_patience": lr_patience,
             "lr_factor": lr_factor,
             "Zmax": Zmax,
+            "dipole": dipole,
+            "scheduler_name": scheduler_name,
         }
         self.hparams.update(params)
         self.save_hyperparameters()
 
+        # set device for model
+        
         # for performing module dropout
         if self.module_keep_prob < 0.0 or self.module_keep_prob > 1.0:
             raise ValueError(
@@ -403,6 +417,43 @@ class SpookyNet(pl.LightningModule):
         # build dictionary that determines which parameters require gradients
         self.build_requires_grad_dict()
 
+
+        # define statistics
+        self.train_E_l1 = torchmetrics.MeanAbsoluteError()
+        self.train_E_l2 = torchmetrics.MeanSquaredError()
+        self.train_F_l1 = torchmetrics.MeanAbsoluteError()
+        self.train_F_l2 = torchmetrics.MeanSquaredError()
+
+        self.val_E_l1 = torchmetrics.MeanAbsoluteError()
+        self.val_E_l2 = torchmetrics.MeanSquaredError()
+        self.val_F_l1 = torchmetrics.MeanAbsoluteError()
+        self.val_F_l2 = torchmetrics.MeanSquaredError()
+        
+        self.test_E_l1 = torchmetrics.MeanAbsoluteError()
+        self.test_E_l2 = torchmetrics.MeanSquaredError()
+        self.test_F_l1 = torchmetrics.MeanAbsoluteError()
+        self.test_F_l2 = torchmetrics.MeanSquaredError()
+
+        # move metrics to correct device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.train_E_l1.to(device)
+        self.train_E_l2.to(device)
+        self.train_F_l1.to(device)
+        self.train_F_l2.to(device)
+
+        self.val_E_l1.to(device)
+        self.val_E_l2.to(device)
+        self.val_F_l1.to(device)
+        self.val_F_l2.to(device)
+
+        self.test_E_l1.to(device)
+        self.test_E_l2.to(device)
+        self.test_F_l1.to(device)
+        self.test_F_l2.to(device)
+
+
+        self.loss = self.loss_function(device)
+
     def reset_parameters(self) -> None:
         """ Initialize parameters randomly. """
         nn.init.orthogonal_(self.output.weight)
@@ -431,13 +482,13 @@ class SpookyNet(pl.LightningModule):
 
     def train(self, mode: bool = True) -> None:
         """ Turn on training mode. """
-        super(SpookyNet, self).train(mode=mode)
+        super(SpookyNetLightning, self).train(mode=mode)
         for name, param in self.named_parameters():
             param.requires_grad = self.requires_grad_dict[name]
 
     def eval(self) -> None:
         """ Turn on evaluation mode (smaller memory footprint)."""
-        super(SpookyNet, self).eval()
+        super(SpookyNetLightning, self).eval()
         for name, param in self.named_parameters():
             param.requires_grad = False
 
@@ -492,6 +543,11 @@ class SpookyNet(pl.LightningModule):
                 "compute_d4_atomic": self.compute_d4_atomic,
                 "module_keep_prob": self.module_keep_prob,
                 "Zmax": self.Zmax,
+                "weight_decay": self.weight_decay,
+                "lr_patience": self.lr_patience,
+                "lr_factor": self.lr_decay,
+                "dipole": self.dipole,
+                "scheduler_name": self.scheduler_name,
             },
             path,
         )
@@ -1301,33 +1357,161 @@ class SpookyNet(pl.LightningModule):
         return energy, forces, dipole, f, ea, qa, ea_rep, ea_ele, ea_vdw, pa, c6
 
 
-    def loss_function(self): 
-        # TODO: Implement loss function
-        pass
+    def loss_function(self, device):
+        loss_function = {
+            "E": torchmetrics.MeanSquaredError(),
+            "F": torchmetrics.MeanSquaredError(),
+        }  
+        if self.dipole:
+            loss_function["D"] = torchmetrics.MeanSquaredError()
+
+        for key in loss_function.keys():
+            loss_function[key].to(device)
+
+        return loss_function
     
     def compute_loss(self, target, pred):
-        pass
+        loss = {}
+        for key in target.keys():
+            loss[key] = self.loss[key](pred[key], target[key])
+
+        return loss
     
     def shared_step(self, batch, mode):
-        pass
+        
+        N = batch.N
+        N_atoms = len(batch.Z)
 
-    def training_step(self): 
-        pass 
+        res_forces = self.energy_and_forces(
+            Z=batch.Z,
+            Q=batch.Q,
+            S=batch.S,
+            R=batch.R,
+            idx_i=batch.idx_i,
+            idx_j=batch.idx_j,
+            batch_seg=batch.batch_seg,
+            num_batch=N,
+            create_graph=True
+            # use_dipole=True
+        )
+        E_pred = res_forces[0]
+        F_pred = res_forces[1]
+        dipole = res_forces[2]
 
-    def validation_step(self):
-        pass
+        target_dict = {
+            "E": batch.E,
+            "F": batch.F,
+        }
+        
+        pred_dict = {
+            "E": E_pred,
+            "F": F_pred,
+        }
 
-    def test_step(self):
-        pass
+        if self.dipole:
+            target_dict["D"] = batch.D
+            pred_dict["D"] = dipole
+        
+        all_loss = self.compute_loss(pred_dict, target_dict)
+        self.update_metrics(target_dict, pred_dict, mode)
+    
+        # this might need to be changed for custom loss fxns
+        all_loss["loss"] = sum(all_loss.values()) 
+
+        self.log(
+            f"{mode}_loss", 
+            all_loss["loss"],             
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=N,
+            sync_dist=True,
+            rank_zero_only=True
+        )
+        
+        return all_loss
+    
+    def training_step(self, batch): 
+        torch.set_grad_enabled(True)
+        return self.shared_step(batch, mode="train")
+
+    def validation_step(self, batch):
+        torch.set_grad_enabled(True)
+        return self.shared_step(batch, mode="val")
+
+    def test_step(self, batch):
+        torch.set_grad_enabled(True)
+        return self.shared_step(batch, mode="test")
+
+    def on_train_epoch_start(self):
+        self.start_time = time.time()
 
     def on_train_epoch_end(self):
-        pass
+        
+        if self.dipole: 
+            e_l1, e_mse, f_l1, f_mse, d_l1, d_mse = self.compute_metrics("train")
+            self.log("train_E_l1", e_l1, prog_bar=True)
+            self.log("train_E_mse", e_mse)
+            self.log("train_F_l1", f_l1, prog_bar=True)
+            self.log("train_F_mse", f_mse)
+            self.log("train_D_l1", d_l1, prog_bar=True)
+            self.log("train_D_mse", d_mse)
+            
+        else:
+            e_l1, e_mse, f_l1, f_mse = self.compute_metrics("train")
+            self.log("train_E_l1", e_l1, prog_bar=True)
+            self.log("train_E_mse", e_mse)
+            self.log("train_F_l1", f_l1, prog_bar=True)
+            self.log("train_F_mse", f_mse)
+               
+        duration = time.time() - self.start_time
+        
+        self.log("epoch_time", 
+                    duration, 
+                on_epoch=True,
+                prog_bar=True, 
+                logger=True,
+                sync_dist=True, 
+                rank_zero_only=True
+        ) 
+
 
     def on_validation_epoch_end(self):
-        pass
+
+        if self.dipole: 
+            e_l1, e_mse, f_l1, f_mse, d_l1, d_mse = self.compute_metrics("val")
+            self.log("val_E_l1", e_l1, prog_bar=True)
+            self.log("val_E_mse", e_mse)
+            self.log("val_F_l1", f_l1, prog_bar=True)
+            self.log("val_F_mse", f_mse)
+            self.log("val_D_l1", d_l1, prog_bar=True)
+            self.log("val_D_mse", d_mse)
+
+        else: 
+            e_l1, e_mse, f_l1, f_mse = self.compute_metrics("val")
+            self.log("val_E_l1", e_l1, prog_bar=True)
+            self.log("val_E_mse", e_mse)
+            self.log("val_F_l1", f_l1, prog_bar=True)
+            self.log("val_F_mse", f_mse)
+
 
     def on_test_epoch_end(self):
-        pass
+        if self.dipole: 
+            e_l1, e_mse, f_l1, f_mse, d_l1, d_mse = self.compute_metrics("test")
+            self.log("test_E_l1", e_l1, prog_bar=True)
+            self.log("test_E_mse", e_mse)
+            self.log("test_F_l1", f_l1, prog_bar=True)
+            self.log("test_F_mse", f_mse)
+            self.log("test_D_l1", d_l1, prog_bar=True)
+            self.log("test_D_mse", d_mse)
+
+        else:
+            e_l1, e_mse, f_l1, f_mse = self.compute_metrics("test")
+            self.log("test_E_l1", e_l1, prog_bar=True)
+            self.log("test_E_mse", e_mse)
+            self.log("test_F_l1", f_l1, prog_bar=True)
+            self.log("test_F_mse", f_mse)
+
 
 
     def update_metrics(self, pred, target, mode):
@@ -1336,16 +1520,32 @@ class SpookyNet(pl.LightningModule):
         """
 
         if mode == "train":
-            self.train_torch_l1.update(pred, target)
-            self.train_torch_mse.update(pred, target)
+            self.train_E_l1.update(pred["E"], target["E"])
+            self.train_E_l2.update(pred["E"], target["E"])
+            self.train_F_l1.update(pred["F"], target["F"])
+            self.train_F_l2.update(pred["F"], target["F"])
+            if self.dipole:
+                self.train_D_l1.update(pred["D"], target["D"])
+                self.train_D_l2.update(pred["D"], target["D"])
         
         elif mode == "val":
-            self.val_torch_l1.update(pred, target)
-            self.val_torch_mse.update(pred, target)
+            self.val_E_l1.update(pred["E"], target["E"])
+            self.val_E_l2.update(pred["E"], target["E"])
+            self.val_F_l1.update(pred["F"], target["F"])
+            self.val_F_l2.update(pred["F"], target["F"])
+            if self.dipole:
+                self.val_D_l1.update(pred["D"], target["D"])
+                self.val_D_l2.update(pred["D"], target["D"])
 
         elif mode == "test":
-            self.test_torch_l1.update(pred, target)
-            self.test_torch_mse.update(pred, target)
+            self.test_E_l1.update(pred["E"], target["E"])
+            self.test_E_l2.update(pred["E"], target["E"])
+            self.test_F_l1.update(pred["F"], target["F"])
+            self.test_F_l2.update(pred["F"], target["F"])
+            if self.dipole:
+                self.test_D_l1.update(pred["D"], target["D"])
+                self.test_D_l2.update(pred["D"], target["D"])
+
 
     def compute_metrics(self, mode):
         """
@@ -1353,40 +1553,51 @@ class SpookyNet(pl.LightningModule):
         """
 
         if mode == "train":
-            torch_l1 = self.train_torch_l1.compute()
-            torch_mse = self.train_torch_mse.compute()
-            self.train_torch_l1.reset()
-            self.train_torch_mse.reset()
+            E_torch_l1 = self.train_E_l1.compute()
+            E_torch_mse = self.train_E_l2.compute()
+            F_torch_l1 = self.train_F_l1.compute()
+            F_torch_mse = self.train_F_l2.compute()
+            if self.dipole:
+                D_torch_l1 = self.train_D_l1.compute()
+                D_torch_mse = self.train_D_l2.compute()
 
         elif mode == "val":
-            torch_l1 = self.val_torch_l1.compute()
-            torch_mse = self.val_torch_mse.compute()
-            self.val_torch_l1.reset()
-            self.val_torch_mse.reset()
+            E_torch_l1 = self.val_E_l1.compute()
+            E_torch_mse = self.val_E_l2.compute()
+            F_torch_l1 = self.val_F_l1.compute()
+            F_torch_mse = self.val_F_l2.compute()
+            if self.dipole:
+                D_torch_l1 = self.val_D_l1.compute()
+                D_torch_mse = self.val_D_l2.compute()
 
         elif mode == "test":
-            torch_l1 = self.test_torch_l1.compute()
-            torch_mse = self.test_torch_mse.compute()
-            self.test_torch_l1.reset()
-            self.test_torch_mse.reset()
-
-        return torch_l1, torch_mse
+            E_torch_l1 = self.test_E_l1.compute()
+            E_torch_mse = self.test_E_l2.compute()
+            F_torch_l1 = self.test_F_l1.compute()
+            F_torch_mse = self.test_F_l2.compute()
+            if self.dipole:
+                D_torch_l1 = self.test_D_l1.compute()
+                D_torch_mse = self.test_D_l2.compute()
+        
+        if self.dipole:
+            return E_torch_l1, E_torch_mse, F_torch_l1, F_torch_mse, D_torch_l1, D_torch_mse
+        else:     
+            return E_torch_l1, E_torch_mse, F_torch_l1, F_torch_mse
     
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, self.parameters()),
-            lr=self.hparams.lr,
+            lr=self.hparams.learning_rate,
             weight_decay=self.hparams.weight_decay,
         )
 
         scheduler = self._config_lr_scheduler(optimizer)
 
-        lr_scheduler = {"scheduler": scheduler, "monitor": "val_mae"}
+        lr_scheduler = {"scheduler": scheduler, "monitor": "val_loss"}
 
         return [optimizer], [lr_scheduler]
     
-
 
     def _config_lr_scheduler(self, optimizer):
         scheduler_name = self.hparams["scheduler_name"].lower()
@@ -1395,8 +1606,8 @@ class SpookyNet(pl.LightningModule):
             scheduler = lr_scheduler.ReduceLROnPlateau(
                 optimizer,
                 mode="min",
-                factor=self.hparams.lr_scale_factor,
-                patience=self.hparams.lr_plateau_patience,
+                factor=self.hparams.lr_factor,
+                patience=self.hparams.lr_patience,
                 min_lr=self.hparams.lr_cutoff,
                 verbose=True,
             )
