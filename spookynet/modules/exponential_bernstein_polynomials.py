@@ -87,6 +87,8 @@ class ExponentialBernsteinPolynomials(nn.Module):
             rbf (FloatTensor [N, num_basis_functions]):
                 Values of the radial basis functions for the distances r.
         """
+        # print devices of each tensor
+        #print(r.device, self._alpha.device)
         alphar = -F.softplus(self._alpha) * r.view(-1, 1)
         x = self.logc + self.n * alphar + self.v * torch.log(-torch.expm1(alphar))
         # x[torch.isnan(x)] = 0.0 #removes nan for r == 0, not necessary

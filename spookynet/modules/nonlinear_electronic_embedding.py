@@ -84,17 +84,22 @@ class NonlinearElectronicEmbedding(nn.Module):
         # determine maximum dot product (for numerics)
         if num_batch > 1:
             if mask is None:
+                #mask = (
+                #    nn.functional.one_hot(batch_seg)
+                #    .to(dtype=x.dtype, device=x.device)
+                #    .transpose(-1, -2)
+                #)
                 mask = (
                     nn.functional.one_hot(batch_seg)
-                    .to(dtype=x.dtype, device=x.device)
+                    .to(dtype=x.dtype)
                     .transpose(-1, -2)
                 )
             tmp = dot.view(1, -1).expand(num_batch, -1)
             tmp, _ = torch.max(mask * tmp, dim=-1)
-            if tmp.device.type == "cpu":  # indexing is faster on CPUs
-                maximum = tmp[batch_seg]
-            else:  # gathering is faster on GPUs
-                maximum = torch.gather(tmp, 0, batch_seg)
+            #if tmp.device.type == "cpu":  # indexing is faster on CPUs
+            #    maximum = tmp[batch_seg]
+            #else:  # gathering is faster on GPUs
+            maximum = torch.gather(tmp, 0, batch_seg)
         else:
             maximum = torch.max(dot)
         # attention
@@ -102,8 +107,8 @@ class NonlinearElectronicEmbedding(nn.Module):
         a = torch.exp((dot - maximum) / d ** 0.5)
 
         anorm = a.new_zeros(num_batch).index_add_(0, batch_seg, a)
-        if a.device.type == "cpu":  # indexing is faster on CPUs
-            anorm = anorm[batch_seg]
-        else:  # gathering is faster on GPUs
-            anorm = torch.gather(anorm, 0, batch_seg)
+        #if a.device.type == "cpu":  # indexing is faster on CPUs
+        #    anorm = anorm[batch_seg]
+        #else:  # gathering is faster on GPUs
+        anorm = torch.gather(anorm, 0, batch_seg)
         return (a / (anorm + eps)).unsqueeze(-1) * v

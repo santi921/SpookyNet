@@ -97,10 +97,10 @@ class ElectrostaticEnergy(nn.Module):
         idx_i: torch.Tensor,
         idx_j: torch.Tensor,
     ) -> torch.Tensor:
-        if q.device.type == "cpu":  # indexing is faster on CPUs
-            fac = self.kehalf * q[idx_i] * q[idx_j]
-        else:  # gathering is faster on GPUs
-            fac = self.kehalf * torch.gather(q, 0, idx_i) * torch.gather(q, 0, idx_j)
+        #if q.device.type == "cpu":  # indexing is faster on CPUs
+        #    fac = self.kehalf * q[idx_i] * q[idx_j]
+        #else:  # gathering is faster on GPUs
+        fac = self.kehalf * torch.gather(q, 0, idx_i) * torch.gather(q, 0, idx_j)
         f = switch_function(rij, self.cuton, self.cutoff)
         coulomb = 1.0 / rij
         damped = 1.0 / (rij ** 2 + 1.0) ** (1.0 / 2.0)
@@ -123,11 +123,11 @@ class ElectrostaticEnergy(nn.Module):
         k2 = torch.sum(k * k, dim=-1)  # squared length of k-vectors
         qg = torch.exp(-0.25 * k2 / self.alpha2) / k2
         # fourier charge density
-        if k.device.type == "cpu":  # indexing is faster on CPUs
-            dot = torch.sum(k[batch_seg] * R.unsqueeze(-2), dim=-1)
-        else:  # gathering is faster on GPUs
-            b = batch_seg.view(-1, 1, 1).expand(-1, k.shape[-2], k.shape[-1])
-            dot = torch.sum(torch.gather(k, 0, b) * R.unsqueeze(-2), dim=-1)
+        #if k.device.type == "cpu":  # indexing is faster on CPUs
+        #    dot = torch.sum(k[batch_seg] * R.unsqueeze(-2), dim=-1)
+        #else:  # gathering is faster on GPUs
+        b = batch_seg.view(-1, 1, 1).expand(-1, k.shape[-2], k.shape[-1])
+        dot = torch.sum(torch.gather(k, 0, b) * R.unsqueeze(-2), dim=-1)
         q_real = q.new_zeros(num_batch, dot.shape[-1]).index_add_(
             0, batch_seg, q.unsqueeze(-1) * torch.cos(dot)
         )
@@ -145,12 +145,12 @@ class ElectrostaticEnergy(nn.Module):
         # spread reciprocal energy over atoms (to get an atomic contributions)
         w = q2 + eps  # epsilon is added to prevent division by zero
         wnorm = w.new_zeros(num_batch).index_add_(0, batch_seg, w)
-        if w.device.type == "cpu":  # indexing is faster on CPUs
-            w = w / wnorm[batch_seg]
-            e_reciprocal = w * e_reciprocal[batch_seg]
-        else:  # gathering is faster on GPUs
-            w = w / torch.gather(wnorm, 0, batch_seg)
-            e_reciprocal = w * torch.gather(e_reciprocal, 0, batch_seg)
+        #if w.device.type == "cpu":  # indexing is faster on CPUs
+        #    w = w / wnorm[batch_seg]
+        #    e_reciprocal = w * e_reciprocal[batch_seg]
+        #else:  # gathering is faster on GPUs
+        w = w / torch.gather(wnorm, 0, batch_seg)
+        e_reciprocal = w * torch.gather(e_reciprocal, 0, batch_seg)
         return self.ke * (e_reciprocal - e_self)
 
     def _ewald(
@@ -177,10 +177,10 @@ class ElectrostaticEnergy(nn.Module):
         idx_i: torch.Tensor,
         idx_j: torch.Tensor,
     ) -> torch.Tensor:
-        if q.device.type == "cpu":  # indexing is faster on CPUs
-            fac = self.kehalf * q[idx_i] * q[idx_j]
-        else:  # gathering is faster on GPUs
-            fac = self.kehalf * torch.gather(q, 0, idx_i) * torch.gather(q, 0, idx_j)
+        #if q.device.type == "cpu":  # indexing is faster on CPUs
+        #    fac = self.kehalf * q[idx_i] * q[idx_j]
+        #else:  # gathering is faster on GPUs
+        fac = self.kehalf * torch.gather(q, 0, idx_i) * torch.gather(q, 0, idx_j)
         f = switch_function(rij, self.cuton, self.cutoff)
         if self.lr_cutoff is None:
             coulomb = 1.0 / rij

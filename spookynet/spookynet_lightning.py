@@ -163,7 +163,7 @@ class SpookyNetLightning(pl.LightningModule):
         # load state from a file (if load_from is not None) and overwrite
         # the given arguments.
         if load_from is not None:
-            saved_state = torch.load(load_from, map_location="cpu")
+            saved_state = torch.load(load_from, map_location="gpu")
             activation = saved_state["activation"]
             num_features = saved_state["num_features"]
             num_basis_functions = saved_state["num_basis_functions"]
@@ -479,10 +479,10 @@ class SpookyNetLightning(pl.LightningModule):
         """ Return torch.dtype of parameters (input tensors must match). """
         return self.nuclear_embedding.element_embedding.dtype
 
-    @property
-    def device(self) -> torch.device:
-        """ Return torch.device of parameters (input tensors must match). """
-        return self.nuclear_embedding.element_embedding.device
+    #@property
+    #def device(self) -> torch.device:
+    #    """ Return torch.device of parameters (input tensors must match). """
+    #    return self.nuclear_embedding.element_embedding.device
 
     def train(self, mode: bool = True) -> None:
         """ Turn on training mode. """
@@ -669,23 +669,24 @@ class SpookyNetLightning(pl.LightningModule):
             vij (FloatTensor [P, 3]):
                 Pairwise interatomic distance vectors.
         """
-        if R.device.type == "cpu":  # indexing is faster on CPUs
-            Ri = R[idx_i]
-            Rj = R[idx_j]
-        else:  # gathering is faster on GPUs
-            Ri = torch.gather(R, 0, idx_i.view(-1, 1).expand(-1, 3))
-            Rj = torch.gather(R, 0, idx_j.view(-1, 1).expand(-1, 3))
+        #if R.device.type == "cpu":  # indexing is faster on CPUs
+        #    Ri = R[idx_i]
+        #    Rj = R[idx_j]
+        #else:  # gathering is faster on GPUs
+        Ri = torch.gather(R, 0, idx_i.view(-1, 1).expand(-1, 3))
+        Rj = torch.gather(R, 0, idx_j.view(-1, 1).expand(-1, 3))
         if (
             cell is not None and cell_offsets is not None and batch_seg is not None
         ):  # apply PBCs
-            if cell.device.type == "cpu":  # indexing is faster on CPUs
-                cells = cell[batch_seg][idx_i]
-            else:  # gathering is faster on GPUs
-                cells = torch.gather(
-                    torch.gather(cell, 0, batch_seg.view(-1, 1, 1).expand(-1, 3, 3)),
-                    0,
-                    idx_i.view(-1, 1, 1).expand(-1, 3, 3),
-                )
+            #if cell.device.type == "cpu":  # indexing is faster on CPUs
+            #    cells = cell[batch_seg][idx_i]
+
+            #else:  # gathering is faster on GPUs
+            cells = torch.gather(
+                torch.gather(cell, 0, batch_seg.view(-1, 1, 1).expand(-1, 3, 3)),
+                0,
+                idx_i.view(-1, 1, 1).expand(-1, 3, 3),
+            )
             offsets = torch.squeeze(torch.bmm(cell_offsets.view(-1, 1, 3), cells), -2)
             Rj += offsets
         vij = Rj - Ri
@@ -718,6 +719,11 @@ class SpookyNetLightning(pl.LightningModule):
         shared.
         """
         # compute interatomic distances and cutoff values
+        #print("R device: ", R.device)
+        #print("idx_i device: ", idx_i.device)
+        #print("idx_j device: ", idx_j.device)
+        #print("batch_seg device: ", batch_seg.device)
+
         (rij, vij) = self.calculate_distances(
             R=R,
             idx_i=idx_i,
@@ -726,6 +732,8 @@ class SpookyNetLightning(pl.LightningModule):
             cell_offsets=cell_offsets,
             batch_seg=batch_seg,
         )
+        #print("rij device: ", rij.device)
+        #print("vij device: ", vij.device)
 
         # short-range distances
         cutmask = rij < self.cutoff  # select all entries below cutoff
@@ -842,7 +850,8 @@ class SpookyNetLightning(pl.LightningModule):
         x = z + q + s
 
         # initialize dropout mask
-        dropout_mask = torch.ones((num_batch, 1), dtype=x.dtype, device=x.device)
+        #dropout_mask = torch.ones((num_batch, 1), dtype=x.dtype, device=x.device)
+        dropout_mask = torch.ones((num_batch, 1), dtype=x.dtype)
 
         # perform iterations over modules
         f = x.new_zeros(x.size())  # initialize output features to zero
@@ -858,34 +867,36 @@ class SpookyNetLightning(pl.LightningModule):
                     * torch.ones(
                         dropout_mask.shape,
                         dtype=dropout_mask.dtype,
-                        device=dropout_mask.device,
+                        #device=dropout_mask.device,
                     )
                 )
             f += y  # accumulate module output to features
 
         # predict atomic energy and partial charge and add bias terms
-        if self.element_bias.device.type == "cpu":  # indexing is faster on CPUs
-            out = self.output(f) + self.element_bias[Z]
-        else:  # gathering is faster on GPUs
-            out = self.output(f) + torch.gather(
-                self.element_bias,
-                0,
-                Z.view(-1, 1).expand(-1, self.element_bias.shape[-1]),
-            )
+        #if self.element_bias.device.type == "cpu":  # indexing is faster on CPUs
+        #    out = self.output(f) + self.element_bias[Z]
+        #else:  # gathering is faster on GPUs
+        out = self.output(f) + torch.gather(
+            self.element_bias,
+            0,
+            Z.view(-1, 1).expand(-1, self.element_bias.shape[-1]),
+        )
         ea = out.narrow(-1, 0, 1).squeeze(-1)  # atomic energy
         qa = out.narrow(-1, 1, 1).squeeze(-1)  # partial charge
 
         # correct partial charges for charge conservation
         # (spread leftover charge evenly over all atoms)
         w = torch.ones(N, dtype=qa.dtype, device=qa.device)
+        #w = torch.ones(N, dtype=qa.dtype)
         Qleftover = Q.index_add(0, batch_seg, -qa)
+        #print(w.device, batch_seg.device, Qleftover.device)
         wnorm = w.new_zeros(num_batch).index_add_(0, batch_seg, w)
-        if w.device.type == "cpu":  # indexing is faster on CPUs
-            w = w / wnorm[batch_seg]
-            qa = qa + w * Qleftover[batch_seg]
-        else:  # gathering is faster on GPUs
-            w = w / torch.gather(wnorm, 0, batch_seg)
-            qa = qa + w * torch.gather(Qleftover, 0, batch_seg)
+        #if w.device.type == "cpu":  # indexing is faster on CPUs
+        #    w = w / wnorm[batch_seg]
+        #    qa = qa + w * Qleftover[batch_seg]
+        #else:  # gathering is faster on GPUs
+        w = w / torch.gather(wnorm, 0, batch_seg)
+        qa = qa + w * torch.gather(Qleftover, 0, batch_seg)
 
         # compute ZBL inspired short-range repulsive contributions
         if self.use_zbl_repulsion:
@@ -1014,6 +1025,15 @@ class SpookyNetLightning(pl.LightningModule):
                 self.use_d4_dispersion or self.compute_d4_atomic is False, this
                 is always zero.
         """
+        #print("Z device: ", Z.device)
+        #print("Q device: ", Q.device)
+        #print("S device: ", S.device)
+        #print("R device: ", R.device)
+        #print("idx_i device: ", idx_i.device)
+        #print("idx_j device: ", idx_j.device)
+        #print("batch_seg device: ", batch_seg.device)
+        #print("num_batch: ", num_batch)
+
         (
             N,
             cutoff_values,
@@ -1168,16 +1188,27 @@ class SpookyNetLightning(pl.LightningModule):
             num_batch=num_batch,
             batch_seg=batch_seg,
         )
+
         if idx_i.numel() > 0:  # autograd will fail if there are no distances
+            #print("sum energy: ", torch.sum(energy).requires_grad)
+            #print(create_graph)
+            #print("R: ", R.requires_grad)
+            #print("R: ", R)
+
+            #if R.requires_grad == False: 
+                #print("R: ", R)
+                # set to True to compute forces
+                #R.requires_grad = True
+            
             grad = torch.autograd.grad(
                 [torch.sum(energy)], [R], 
                 create_graph=create_graph,
-                
             )[0]
             if grad is not None:  # necessary for torch.jit compatibility
                 forces = -grad
             else:
                 forces = torch.zeros_like(R)
+        
         else:  # if there are no distances, the forces are zero
             forces = torch.zeros_like(R)
         return (energy, forces, f, ea, qa, ea_rep, ea_ele, ea_vdw, pa, c6)
@@ -1398,18 +1429,45 @@ class SpookyNetLightning(pl.LightningModule):
     
 
     def shared_step(self, batch, mode):
-        
+
+        """
+        # batch object
         N = batch.N
         N_atoms = len(batch.Z)
+        Z = batch.Z
+        Q = batch.Q
+        S = batch.S
+        R = batch.R
+        idx_i = batch.idx_i
+        idx_j = batch.idx_j
+        batch_seg = batch.batch_seg
+        E = batch.E
+        F = batch.F
+        D = batch.D
+        """
+        # batch dict
+        N = batch["N"]
+        N_atoms = len(batch["Z"])
+        Z = batch["Z"]
+        Q = batch["Q"]
+        S = batch["S"]
+        R = batch["R"]
+        idx_i = batch["idx_i"]
+        idx_j = batch["idx_j"]
+        batch_seg = batch["batch_seg"]
+        E = batch["E"]
+        F = batch["F"]
+        
+
 
         res_forces = self.energy_and_forces(
-            Z=batch.Z,
-            Q=batch.Q,
-            S=batch.S,
-            R=batch.R,
-            idx_i=batch.idx_i,
-            idx_j=batch.idx_j,
-            batch_seg=batch.batch_seg,
+            Z=Z,
+            Q=Q,
+            S=S,
+            R=R,
+            idx_i=idx_i,
+            idx_j=idx_j,
+            batch_seg=batch_seg,
             num_batch=N,
             create_graph=True
             # use_dipole=True
@@ -1419,8 +1477,8 @@ class SpookyNetLightning(pl.LightningModule):
         dipole = res_forces[2]
 
         target_dict = {
-            "E": batch.E,
-            "F": batch.F,
+            "E": E,
+            "F": F,
         }
         
         pred_dict = {
@@ -1429,7 +1487,7 @@ class SpookyNetLightning(pl.LightningModule):
         }
 
         if self.dipole:
-            target_dict["D"] = batch.D
+            target_dict["D"] = batch["D"]
             pred_dict["D"] = dipole
         
         all_loss = self.compute_loss(pred_dict, target_dict)
@@ -1497,16 +1555,16 @@ class SpookyNetLightning(pl.LightningModule):
         
         if self.dipole: 
             e_l1, e_rmse, f_l1, f_rmse, d_l1, d_rmse = self.compute_metrics("train")
-            self.log("train_D_l1", d_l1)
-            self.log("train_D_rmse", d_rmse, prog_bar=True)
+            self.log("train_D_l1", d_l1, sync_dist=True)
+            self.log("train_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
             
         else:
             e_l1, e_rmse, f_l1, f_rmse = self.compute_metrics("train")
 
-        self.log("train_E_l1", e_l1)
-        self.log("train_E_rmse", e_rmse)
-        self.log("train_F_l1", f_l1)
-        self.log("train_F_rmse", f_rmse, prog_bar=True)
+        self.log("train_E_l1", e_l1, sync_dist=True)
+        self.log("train_E_rmse", e_rmse, sync_dist=True)
+        self.log("train_F_l1", f_l1, sync_dist=True)
+        self.log("train_F_rmse", f_rmse, prog_bar=True, sync_dist=True)
                
         duration = time.time() - self.start_time
         
@@ -1524,31 +1582,31 @@ class SpookyNetLightning(pl.LightningModule):
 
         if self.dipole: 
             e_l1, e_rmse, f_l1, f_rmse, d_l1, d_rmse = self.compute_metrics("val")
-            self.log("val_D_l1", d_l1)
-            self.log("val_D_rmse", d_rmse, prog_bar=True)
+            self.log("val_D_l1", d_l1, sync_dist=True)
+            self.log("val_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
 
         else: 
             e_l1, e_rmse, f_l1, f_rmse = self.compute_metrics("val")
         
-        self.log("val_E_l1", e_l1)
-        self.log("val_E_rmse", e_rmse)
-        self.log("val_F_l1", f_l1)
-        self.log("val_F_rmse", f_rmse, prog_bar=True)
+        self.log("val_E_l1", e_l1, sync_dist=True)
+        self.log("val_E_rmse", e_rmse, sync_dist=True)
+        self.log("val_F_l1", f_l1, sync_dist=True)
+        self.log("val_F_rmse", f_rmse, prog_bar=True, sync_dist=True)
 
 
     def on_test_epoch_end(self):
         if self.dipole: 
             e_l1, e_rmse, f_l1, f_rmse, d_l1, d_rmse = self.compute_metrics("test")
 
-            self.log("test_D_l1", d_l1)
-            self.log("test_D_rmse", d_rmse, prog_bar=True)
+            self.log("test_D_l1", d_l1, sync_dist=True)
+            self.log("test_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
 
         else:
             e_l1, e_rmse, f_l1, f_rmse = self.compute_metrics("test")
-        self.log("test_E_l1", e_l1)
-        self.log("test_E_rmse", e_rmse)
-        self.log("test_F_l1", f_l1)
-        self.log("test_F_rmse", f_rmse, prog_bar=True)
+        self.log("test_E_l1", e_l1, sync_dist=True)
+        self.log("test_E_rmse", e_rmse, sync_dist=True)
+        self.log("test_F_l1", f_l1, sync_dist=True)
+        self.log("test_F_rmse", f_rmse, prog_bar=True, sync_dist=True)
 
 
     def update_metrics(self, pred, target, mode):

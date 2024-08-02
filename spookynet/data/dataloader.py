@@ -2,9 +2,10 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from spookynet.data.utils import elem_to_num, get_idx
-
+# import lightngin module 
+from pytorch_lightning import LightningModule
 class SpookyBatch:
-    device = torch.device("cuda")
+
 
     def __init__(self):
         self.N = 0
@@ -18,39 +19,87 @@ class SpookyBatch:
         self.idx_j = []
         self.batch_seg = []
 
-    def toTensor(self):
-        self.Z = torch.tensor(self.Z, dtype=torch.int64, device=SpookyBatch.device)
-        self.R = torch.tensor(
-            self.R, dtype=torch.float32, device=SpookyBatch.device, requires_grad=True
+    def toTensor(self, device=None):
+        if device is not None:
+            device = device
+        else: 
+            device = torch.device("cuda")
+
+        self.Z = torch.tensor(
+            self.Z, 
+            dtype=torch.int64, 
+            device=device
         )
+        
+        self.R = torch.tensor(
+            self.R, 
+            dtype=torch.float32, 
+            device=device, 
+            requires_grad=True
+        )
+
         if self.Q == []:
             self.Q = torch.zeros(
-                self.N, dtype=torch.float32, device=SpookyBatch.device
+                self.N, 
+                dtype=torch.float32, 
+                device=device
             )  # not using this so could just pass the same tensor around
+        
         else:
             self.Q = torch.tensor(
-                self.Q, dtype=torch.float32, device=SpookyBatch.device
+                self.Q, 
+                dtype=torch.float32, 
+                device=device
             )
+
         if self.S == []:
             self.S = torch.zeros(
-                self.N, dtype=torch.float32, device=SpookyBatch.device
-            )  # ditto
+                self.N, 
+                dtype=torch.float32, 
+                device=device
+            )  
+
         else:
             self.S = torch.tensor(
-                self.S, dtype=torch.float32, device=SpookyBatch.device
+                self.S, 
+                dtype=torch.float32, 
+                device=device
             )
             
-        self.E = torch.tensor(self.E, dtype=torch.float32, device=SpookyBatch.device)
-        self.F = torch.tensor(self.F, dtype=torch.float32, device=SpookyBatch.device)
+        self.E = torch.tensor(
+                self.E, 
+                dtype=torch.float32, 
+                device=device
+        )        
+        
+        self.F = torch.tensor(
+                self.F, 
+                dtype=torch.float32, 
+                device=device
+        )
+        
         self.idx_i = torch.tensor(
-            self.idx_i, dtype=torch.int64, device=SpookyBatch.device
+            self.idx_i, 
+            dtype=torch.int64, 
+            device=device
         )
+
         self.idx_j = torch.tensor(
-            self.idx_j, dtype=torch.int64, device=SpookyBatch.device
+            self.idx_j, 
+            dtype=torch.int64, 
+            device=device
         )
+
         self.batch_seg = torch.tensor(
-            self.batch_seg, dtype=torch.int64, device=SpookyBatch.device
+            self.batch_seg, 
+            dtype=torch.int64, 
+            device=device
         )  # int64 required for "index tensors"
+
+
+
+
+
         return self
 
 
@@ -60,12 +109,24 @@ def collate_tabular(samples):
     df_sub = pd.DataFrame(samples)
     
     nm = 0 
-    na = 0  
-    batch = (
-        SpookyBatch()
-    ) 
+    na = 0
+
+    Z_list = []
+    R_list = []
+    E_list = []
+    F_list = []
+    Q_list = []
+    S_list = []
+    idx_i_list = []
+    idx_j_list = []
+    batch_seg_list = []
+    
+    #batch = (
+    #    SpookyBatch()
+    #) 
         
     for ind, row in df_sub.iterrows():
+
         pos_elem_list = [
             (elem_to_num[i["name"]], i["xyz"]) for i in row["molecule"]["sites"]
         ]
@@ -79,26 +140,121 @@ def collate_tabular(samples):
         spin = row["molecule"]["spin_multiplicity"]
 
 
-        batch.Z.extend(elem)
-        batch.R.extend(pos)
-        batch.E.append(energy)  # target energy
-        batch.F.extend(force)  # target forces
-        batch.Q.extend([charge])
-        batch.S.extend([spin])
+        Z_list.extend(elem)
+        R_list.extend(pos)
+        E_list.append(energy) 
+        F_list.extend(force)  
+        Q_list.extend([charge])
+        S_list.extend([spin])
         cur_idx_i, cur_idx_j = get_idx(
             pos
         ) 
         cur_idx_i += na
         cur_idx_j += na
-        batch.idx_i.extend(cur_idx_i)
-        batch.idx_j.extend(cur_idx_j)
-        batch.batch_seg.extend([nm] * len(elem))
+        idx_i_list.extend(cur_idx_i)
+        idx_j_list.extend(cur_idx_j)
+        batch_seg_list.extend([nm] * len(elem))
         na += len(elem)
         nm += 1
     
-    batch.N = nm
-    batch.toTensor()
-    return batch
+    N = nm
+    device = torch.device("cuda")
+    
+    Z = torch.tensor(
+        Z_list, 
+        dtype=torch.int64, 
+        device=device
+    )
+
+    R = torch.tensor(
+        R_list, 
+        dtype=torch.float32, 
+        device=device, 
+        requires_grad=True
+    )
+
+    if Q_list == []:
+        Q = torch.zeros(
+            N, 
+            dtype=torch.float32, 
+            device=device
+        )
+    else:
+        Q = torch.tensor(
+            Q_list, 
+            dtype=torch.float32, 
+            device=device
+        )
+
+    if S_list == []:
+        S = torch.zeros(
+            N, 
+            dtype=torch.float32, 
+            device=device
+        )
+    else:
+        S = torch.tensor(
+            S_list, 
+            dtype=torch.float32, 
+            device=device
+        )
+
+    E = torch.tensor(
+        E_list, 
+        dtype=torch.float32, 
+        device=device, 
+        requires_grad=True
+    )
+
+    F = torch.tensor(
+        F_list, 
+        dtype=torch.float32, 
+        device=device
+    )
+    idx_i = torch.tensor(
+        idx_i_list, 
+        dtype=torch.int64, 
+        device=device
+    )
+
+    idx_j = torch.tensor(
+        idx_j_list, 
+        dtype=torch.int64, 
+        device=device
+    )
+
+    batch_seg = torch.tensor(
+        batch_seg_list, 
+        dtype=torch.int64, 
+        device=device
+    )  # int64 required for "index tensors"
+    
+    return {
+        "Z": Z,
+        "R": R,
+        "E": E,
+        "F": F,
+        "Q": Q,
+        "S": S,
+        "idx_i": idx_i,
+        "idx_j": idx_j,
+        "batch_seg": batch_seg,
+        "N": N,
+    }
+
+    return {
+        "Z": Z_list,
+        "R": R_list,
+        "E": E_list,
+        "F": F_list,
+        "Q": Q_list,
+        "S": S_list,
+        "idx_i": idx_i_list,
+        "idx_j": idx_j_list,
+        "batch_seg": batch_seg_list,
+        "N": N,
+    }
+    #return batch
 
 
 def collate_molecule(samples):

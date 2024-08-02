@@ -274,12 +274,12 @@ class D4DispersionEnergy(nn.Module):
             )
             * gweights
         )
-        if zeta.device.type == "cpu":  # indexing is faster on CPUs
-            zetai = zeta[idx_i]
-            zetaj = zeta[idx_j]
-        else:  # gathering is faster on GPUs
-            zetai = torch.gather(zeta, 0, idx_i.view(-1, 1).expand(-1, zeta.size(1)))
-            zetaj = torch.gather(zeta, 0, idx_j.view(-1, 1).expand(-1, zeta.size(1)))
+        #if zeta.device.type == "cpu":  # indexing is faster on CPUs
+        #    zetai = zeta[idx_i]
+        #    zetaj = zeta[idx_j]
+        #else:  # gathering is faster on GPUs
+        zetai = torch.gather(zeta, 0, idx_i.view(-1, 1).expand(-1, zeta.size(1)))
+        zetaj = torch.gather(zeta, 0, idx_j.view(-1, 1).expand(-1, zeta.size(1)))
         refc6ij = self.refc6[Zi, Zj, :, :]
         zetaij = zetai.view(zetai.size(0), zetai.size(1), 1) * zetaj.view(
             zetaj.size(0), 1, zetaj.size(1)

@@ -76,21 +76,23 @@ class Attention(nn.Module):
                 brow = batch_seg.view(1, -1, 1).expand(num_batch, -1, U.shape[-1])
                 bcol = (
                     torch.arange(
-                        num_batch, dtype=batch_seg.dtype, device=batch_seg.device
+                        num_batch, 
+                        dtype=batch_seg.dtype , device=U.device
                     )
                     .view(-1, 1, 1)
                     .expand(-1, U.shape[-2], U.shape[-1])
                 )
+                #print(brow.device, bcol.device, U.device)
                 mask = torch.where(
                     brow == bcol, torch.ones_like(U), torch.zeros_like(U)
                 )
                 tmp = U.unsqueeze(0).expand(num_batch, -1, -1)
                 tmp, _ = torch.max(mask * tmp, dim=-1)
                 tmp, _ = torch.max(tmp, dim=-1)
-                if tmp.device.type == "cpu":  # indexing faster on CPU
-                    maximum = tmp[batch_seg].unsqueeze(-1)
-                else:  # gathering is faster on GPUs
-                    maximum = torch.gather(tmp, 0, batch_seg).unsqueeze(-1)
+                #if tmp.device.type == "cpu":  # indexing faster on CPU
+                #    maximum = tmp[batch_seg].unsqueeze(-1)
+                #else:  # gathering is faster on GPUs
+                maximum = torch.gather(tmp, 0, batch_seg).unsqueeze(-1)
             else:
                 maximum = torch.max(U)
         return (torch.exp(U - h - maximum) + eps) / math.sqrt(m)
@@ -144,7 +146,7 @@ class Attention(nn.Module):
             #    for b in range(num_batch)])/norm
             if mask is None:  # mask can be shared across multiple attentions
                 one_hot = nn.functional.one_hot(batch_seg).to(
-                    dtype=V.dtype, device=V.device
+                    dtype=V.dtype #, device=V.device
                 )
                 mask = one_hot @ one_hot.transpose(-1, -2)
             return ((mask * (K @ Q.transpose(-1, -2))).transpose(-1, -2) @ V) / norm

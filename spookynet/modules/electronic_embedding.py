@@ -81,7 +81,8 @@ class ElectronicEmbedding(nn.Module):
             Atomic feature vectors.
         """
         if batch_seg is None:  # assume a single batch
-            batch_seg = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
+            #batch_seg = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
+            batch_seg = torch.zeros(x.size(0), dtype=torch.int64)
         q = self.linear_q(x)  # queries
         if self.is_charge:
             e = F.relu(torch.stack([E, -E], dim=-1))
@@ -93,8 +94,8 @@ class ElectronicEmbedding(nn.Module):
         dot = torch.sum(k * q, dim=-1) / k.shape[-1] ** 0.5  # scaled dot product
         a = nn.functional.softplus(dot)  # unnormalized attention weights
         anorm = a.new_zeros(num_batch).index_add_(0, batch_seg, a)
-        if a.device.type == "cpu":  # indexing is faster on CPUs
-            anorm = anorm[batch_seg]
-        else:  # gathering is faster on GPUs
-            anorm = torch.gather(anorm, 0, batch_seg)
+        #if a.device.type == "cpu":  # indexing is faster on CPUs
+        #    anorm = anorm[batch_seg]
+        #else:  # gathering is faster on GPUs
+        anorm = torch.gather(anorm, 0, batch_seg)
         return self.resblock((a / (anorm + eps)).unsqueeze(-1) * v)
