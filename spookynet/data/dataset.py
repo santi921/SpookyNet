@@ -23,8 +23,9 @@ class SpookyDataset(Dataset):
 class SpookyDatasetTabular(Dataset):
     #device = torch.device("cuda")
 
-    def __init__(self, df):
+    def __init__(self, df, dipole=False):
         self.df = df
+        self.dipole = dipole
         self.N = len(df)
 
     def __len__(self):

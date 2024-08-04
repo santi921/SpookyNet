@@ -117,7 +117,7 @@ def train_new():
 
 def train_tabular():
 
-    model = SpookyNetLightning().to(torch.float32).cuda()
+    model = SpookyNetLightning(dipole=True).to(torch.float32).cuda()
     
     #optimizer = torch.optim.Adam(model.parameters(), lr=START_LR, amsgrad=True)
     #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -126,8 +126,8 @@ def train_tabular():
 
     df = pd.read_json("./train_test_radqm9.json")
 
-    batch_size = 256
-    dataset = SpookyDatasetTabular(df)
+    batch_size = 128
+    dataset = SpookyDatasetTabular(df, dipole=True)
 
     training_dataloader = DataloaderTabular(
         dataset, 

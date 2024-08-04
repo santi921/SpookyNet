@@ -427,16 +427,21 @@ class SpookyNetLightning(pl.LightningModule):
         self.train_E_rl2 = torchmetrics.MeanSquaredError(squared=False)
         self.train_F_l1 = torchmetrics.MeanAbsoluteError()
         self.train_F_rl2 = torchmetrics.MeanSquaredError(squared=False)
-        
+        self.train_D_l1 = torchmetrics.MeanAbsoluteError()
+
         self.val_E_l1 = torchmetrics.MeanAbsoluteError()
         self.val_E_rl2 = torchmetrics.MeanSquaredError(squared=False)
         self.val_F_l1 = torchmetrics.MeanAbsoluteError()
         self.val_F_rl2 = torchmetrics.MeanSquaredError(squared=False)
-        
+        self.val_D_l1 = torchmetrics.MeanAbsoluteError()
+
         self.test_E_l1 = torchmetrics.MeanAbsoluteError()
         self.test_E_rl2 = torchmetrics.MeanSquaredError(squared=False)
         self.test_F_l1 = torchmetrics.MeanAbsoluteError()
         self.test_F_rl2 = torchmetrics.MeanSquaredError(squared=False)
+        self.test_D_l1 = torchmetrics.MeanAbsoluteError()
+
+        
         
         # move metrics to correct device
         #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1395,12 +1400,14 @@ class SpookyNetLightning(pl.LightningModule):
                 batch_seg=batch_seg,
             )
             forces = torch.zeros_like(R)
+        
         if use_dipole:
             dipole = qa.new_zeros((num_batch, 3)).index_add_(
                 0, batch_seg, qa.view(-1, 1) * R
             )
         else:
             dipole = qa.new_zeros((num_batch, 3))
+
         return energy, forces, dipole, f, ea, qa, ea_rep, ea_ele, ea_vdw, pa, c6
 
 
@@ -1423,6 +1430,7 @@ class SpookyNetLightning(pl.LightningModule):
 
         loss = {}
         for key in target.keys():
+            #print(key)
             loss[key] = self.loss[key](pred[key], target[key]) 
 
         return loss
@@ -1472,9 +1480,15 @@ class SpookyNetLightning(pl.LightningModule):
             create_graph=True
             # use_dipole=True
         )
+
+        
+        dipole = res_forces[3].new_zeros((N, 3)).index_add_(
+            0, batch_seg, res_forces[3].view(-1, 1) * R
+        )
+    
         E_pred = res_forces[0]
         F_pred = res_forces[1]
-        dipole = res_forces[2]
+        
 
         target_dict = {
             "E": E,
@@ -1554,9 +1568,9 @@ class SpookyNetLightning(pl.LightningModule):
     def on_train_epoch_end(self):
         
         if self.dipole: 
-            e_l1, e_rmse, f_l1, f_rmse, d_l1, d_rmse = self.compute_metrics("train")
+            e_l1, e_rmse, f_l1, f_rmse, d_l1 = self.compute_metrics("train")
             self.log("train_D_l1", d_l1, sync_dist=True)
-            self.log("train_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
+            #self.log("train_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
             
         else:
             e_l1, e_rmse, f_l1, f_rmse = self.compute_metrics("train")
@@ -1581,9 +1595,9 @@ class SpookyNetLightning(pl.LightningModule):
     def on_validation_epoch_end(self):
 
         if self.dipole: 
-            e_l1, e_rmse, f_l1, f_rmse, d_l1, d_rmse = self.compute_metrics("val")
+            e_l1, e_rmse, f_l1, f_rmse, d_l1 = self.compute_metrics("val")
             self.log("val_D_l1", d_l1, sync_dist=True)
-            self.log("val_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
+            #self.log("val_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
 
         else: 
             e_l1, e_rmse, f_l1, f_rmse = self.compute_metrics("val")
@@ -1596,10 +1610,10 @@ class SpookyNetLightning(pl.LightningModule):
 
     def on_test_epoch_end(self):
         if self.dipole: 
-            e_l1, e_rmse, f_l1, f_rmse, d_l1, d_rmse = self.compute_metrics("test")
+            e_l1, e_rmse, f_l1, f_rmse, d_l1 = self.compute_metrics("test")
 
             self.log("test_D_l1", d_l1, sync_dist=True)
-            self.log("test_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
+            #self.log("test_D_rmse", d_rmse, prog_bar=True, sync_dist=True)
 
         else:
             e_l1, e_rmse, f_l1, f_rmse = self.compute_metrics("test")
@@ -1625,7 +1639,7 @@ class SpookyNetLightning(pl.LightningModule):
 
             if self.dipole:
                 self.train_D_l1.update(pred["D"], target["D"])
-                self.train_D_rl2.update(pred["D"], target["D"])
+                
         
         elif mode == "val":
             self.val_E_l1.update(pred["E"], target["E"])
@@ -1637,7 +1651,7 @@ class SpookyNetLightning(pl.LightningModule):
 
             if self.dipole:
                 self.val_D_l1.update(pred["D"], target["D"])
-                self.val_D_rl2.update(pred["D"], target["D"])
+                
 
         elif mode == "test":
             self.test_E_l1.update(pred["E"], target["E"])
@@ -1650,7 +1664,7 @@ class SpookyNetLightning(pl.LightningModule):
 
             if self.dipole:
                 self.test_D_l1.update(pred["D"], target["D"])
-                self.test_D_rl2.update(pred["D"], target["D"])
+                
 
 
     def compute_metrics(self, mode):
@@ -1665,7 +1679,7 @@ class SpookyNetLightning(pl.LightningModule):
             F_torch_rmse = self.train_F_rl2.compute()
             if self.dipole:
                 D_torch_l1 = self.train_D_l1.compute()
-                D_torch_rmse = self.train_D_rl2.compute()
+                #D_torch_rmse = self.train_D_rl2.compute()
 
             #count_atoms = self.train_atom_count.compute()
 
@@ -1676,7 +1690,7 @@ class SpookyNetLightning(pl.LightningModule):
             F_torch_rmse = self.val_F_rl2.compute()
             if self.dipole:
                 D_torch_l1 = self.val_D_l1.compute()
-                D_torch_rmse = self.val_D_rl2.compute()
+                #D_torch_rmse = self.val_D_rl2.compute()
 
             #count_atoms = self.val_atom_count.compute()
 
@@ -1687,12 +1701,12 @@ class SpookyNetLightning(pl.LightningModule):
             F_torch_rmse = self.test_F_rl2.compute()
             if self.dipole:
                 D_torch_l1 = self.test_D_l1.compute()
-                D_torch_rmse = self.test_D_rl2.compute()
+                #D_torch_rmse = self.test_D_rl2.compute()
 
             #count_atoms = self.test_atom_count.compute()
         
         if self.dipole:
-            return E_torch_l1, E_torch_rmse, F_torch_l1, F_torch_rmse, D_torch_l1, D_torch_rmse
+            return E_torch_l1, E_torch_rmse, F_torch_l1, F_torch_rmse, D_torch_l1
         else:     
             return E_torch_l1, E_torch_rmse, F_torch_l1, F_torch_rmse
     

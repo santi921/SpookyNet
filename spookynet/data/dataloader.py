@@ -117,6 +117,7 @@ def collate_tabular(samples):
     F_list = []
     Q_list = []
     S_list = []
+    dipole = []
     idx_i_list = []
     idx_j_list = []
     batch_seg_list = []
@@ -138,7 +139,7 @@ def collate_tabular(samples):
         force = row["gradient"]
         energy = row["energy"]
         force = [sublist for sublist in force]
-        
+        dipole.append(row["calc_resp_dipole_moments"])
 
 
 
@@ -156,6 +157,7 @@ def collate_tabular(samples):
         idx_i_list.extend(cur_idx_i)
         idx_j_list.extend(cur_idx_j)
         batch_seg_list.extend([nm] * len(elem))
+        
         na += len(elem)
         nm += 1
     
@@ -231,6 +233,13 @@ def collate_tabular(samples):
         device=device
     )  # int64 required for "index tensors"
     
+    dipole = torch.tensor(
+        dipole, 
+        dtype=torch.float32, 
+        device=device
+    )
+    #print('dipole dim:', dipole.shape)
+
     return {
         "Z": Z,
         "R": R,
@@ -242,20 +251,10 @@ def collate_tabular(samples):
         "idx_j": idx_j,
         "batch_seg": batch_seg,
         "N": N,
+        'D': dipole
     }
 
-    return {
-        "Z": Z_list,
-        "R": R_list,
-        "E": E_list,
-        "F": F_list,
-        "Q": Q_list,
-        "S": S_list,
-        "idx_i": idx_i_list,
-        "idx_j": idx_j_list,
-        "batch_seg": batch_seg_list,
-        "N": N,
-    }
+
     #return batch
 
 
