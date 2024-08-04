@@ -28,7 +28,7 @@ from spookynet.data.dataloader import (
 torch.set_float32_matmul_precision("high")  # might have to disable on older GPUs
 
 
-
+"""
 def train_new():
     NUM_EPOCHES = 1000
     BEST_POINT = "best.pt"
@@ -113,7 +113,7 @@ def train_new():
                     scheduler.best,
                 )
             )
-
+"""
 
 def train_tabular():
 
@@ -124,9 +124,9 @@ def train_tabular():
     #    optimizer, factor=0.5, patience=50, threshold=0
     #)
 
-    df = pd.read_json("/home/santiagovargas/dev/berkeley_pes/data/test_libe.json")
+    df = pd.read_json("./train_test_radqm9.json")
 
-    batch_size = 100
+    batch_size = 256
     dataset = SpookyDatasetTabular(df)
 
     training_dataloader = DataloaderTabular(
@@ -171,10 +171,10 @@ def train_tabular():
     trainer = pl.Trainer(
             max_epochs=1000,
             accelerator="gpu",
-            devices=[0, 1],
+            devices=[0],
             #num_nodes=1,
             #accumulate_grad_batches=1,
-            strategy="ddp",
+            strategy="auto",
             enable_progress_bar=True,
             #gradient_clip_val=100.0,
             callbacks=[
@@ -189,7 +189,7 @@ def train_tabular():
 
     trainer.fit(model, training_dataloader, validation_dataloader)
     
-    
+    """
 def train():
     NUM_EPOCHES = 1000
     BEST_POINT = "best.pt"
@@ -274,6 +274,8 @@ def train():
                     scheduler.best,
                 )
             )
+"""
+
 
 def compute_rmse(batches, model):
     mse_sum = torch.nn.MSELoss(reduction="sum")

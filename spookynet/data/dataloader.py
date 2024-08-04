@@ -130,14 +130,16 @@ def collate_tabular(samples):
         pos_elem_list = [
             (elem_to_num[i["name"]], i["xyz"]) for i in row["molecule"]["sites"]
         ]
+        charge = row["molecule"]["charge"]
+        spin = row["molecule"]["spin_multiplicity"]
 
         elem = [i[0] for i in pos_elem_list]
         pos = [i[1] for i in pos_elem_list]
         force = row["gradient"]
-        force = [sublist for sublist in force]
         energy = row["energy"]
-        charge = row["molecule"]["charge"]
-        spin = row["molecule"]["spin_multiplicity"]
+        force = [sublist for sublist in force]
+        
+
 
 
         Z_list.extend(elem)
