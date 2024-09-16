@@ -5,15 +5,12 @@ import pandas as pd
 from spookynet import SpookyNet
 from spookynet.data.dataset import (
     SpookyBatch,
-    SpookyDatasetTabular, 
-    load_dataset, 
-    load_batches
+    SpookyDatasetTabular,
+    load_dataset,
+    load_batches,
 )
 
-from spookynet.data.dataloader import (
-    DataloaderMolecules,
-    DataloaderTabular
-)
+from spookynet.data.dataloader import DataloaderMolecules, DataloaderTabular
 
 
 def train_new():
@@ -31,12 +28,12 @@ def train_new():
 
     df = pd.read_json("/home/santiagovargas/dev/berkeley_pes/data/test_libe.json")
 
-    #training = load_batches(df)
-    #validation = load_batches(df)
+    # training = load_batches(df)
+    # validation = load_batches(df)
     training_dataset = load_dataset(df)
 
     batch_size = 100
-    #print("training dataset length: ", len(training_dataset))
+    # print("training dataset length: ", len(training_dataset))
     training_dataloader = DataloaderMolecules(
         training_dataset, batch_size=batch_size, shuffle=True
     )
@@ -49,10 +46,10 @@ def train_new():
 
     for epoch in range(NUM_EPOCHES):
 
-        #random.shuffle(training)
-        
+        # random.shuffle(training)
+
         for batch in training_dataloader:
-            
+
             N = batch.N
             N_atoms = len(batch.Z)
 
@@ -71,12 +68,10 @@ def train_new():
             E_pred = res_forces[0]
             F_pred = res_forces[1]
             dipole = res_forces[2]
-            
-            loss = (
-                mse_sum(batch.E, E_pred)
-            ) / N_atoms
-            + mse_sum_forces(batch.F, F_pred) / N 
-            #+ mse_sum_dipole(dipole, dipole_pred)
+
+            loss = (mse_sum(batch.E, E_pred)) / N_atoms
+            +mse_sum_forces(batch.F, F_pred) / N
+            # + mse_sum_dipole(dipole, dipole_pred)
 
             optimizer.zero_grad()
             loss.backward()
@@ -84,9 +79,9 @@ def train_new():
             learning_rate = optimizer.param_groups[0]["lr"]
 
         rmse, force_rmse = compute_rmse_dataloader(validation_dataloader, model)
-        #rmse, force_rmse = compute_rmse(validation, model)
+        # rmse, force_rmse = compute_rmse(validation, model)
         rmse_sum = rmse + force_rmse
-        
+
         if scheduler.is_better(rmse_sum, scheduler.best):
             model.save(BEST_POINT)
         scheduler.step(rmse_sum)
@@ -117,12 +112,12 @@ def train_tabular():
 
     df = pd.read_json("/home/santiagovargas/dev/berkeley_pes/data/test_libe.json")
 
-    #training = load_batches(df)
-    #validation = load_batches(df)
-    #training_dataset = load_dataset(df)
+    # training = load_batches(df)
+    # validation = load_batches(df)
+    # training_dataset = load_dataset(df)
 
     batch_size = 100
-    #print("training dataset length: ", len(training_dataset))
+    # print("training dataset length: ", len(training_dataset))
     dataset = SpookyDatasetTabular(df)
 
     training_dataloader = DataloaderTabular(
@@ -138,7 +133,7 @@ def train_tabular():
     for epoch in range(NUM_EPOCHES):
 
         for batch in training_dataloader:
-            
+
             N = batch.N
             N_atoms = len(batch.Z)
             res_forces = model.forward(
@@ -151,31 +146,27 @@ def train_tabular():
                 batch_seg=batch.batch_seg,
                 num_batch=N,
                 create_graph=True,
-                use_forces=True, 
-                use_dipole=True
+                use_forces=True,
+                use_dipole=True,
             )
 
             E_pred = res_forces[0]
             F_pred = res_forces[1]
             dipole = res_forces[2]
             partial_charges = res_forces[5]
-            
-            
-            loss = (
-                mse_sum(E, E_pred)
-            ) / N_atoms
-            + mse_sum_forces(F, F_pred) / N 
-            #+ mse_sum_dipole(dipole, dipole_pred)
+
+            loss = (mse_sum(E, E_pred)) / N_atoms
+            +mse_sum_forces(F, F_pred) / N
+            # + mse_sum_dipole(dipole, dipole_pred)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             learning_rate = optimizer.param_groups[0]["lr"]
 
-        
         rmse, force_rmse = compute_rmse_dataloader(validation_dataloader, model)
         rmse_sum = rmse + force_rmse
-        
+
         if scheduler.is_better(rmse_sum, scheduler.best):
             model.save(BEST_POINT)
         scheduler.step(rmse_sum)
@@ -208,7 +199,7 @@ def train():
 
     training = load_batches(df)
     validation = load_batches(df)
-    #training_dataset = load_dataset(df)
+    # training_dataset = load_dataset(df)
 
     batch_size = 100
     mse_sum = torch.nn.MSELoss(reduction="sum")
@@ -219,7 +210,7 @@ def train():
 
         random.shuffle(training)
         for batch in training:
-        
+
             N = batch.N
             N_atoms = len(batch.Z)
 
@@ -232,31 +223,29 @@ def train():
                 idx_j=batch.idx_j,
                 batch_seg=batch.batch_seg,
                 num_batch=N,
-                create_graph=True
+                create_graph=True,
             )
             F = batch.F
             E = batch.E
-            
+
             E_pred = res_forces[0]
             F_pred = res_forces[1]
             dipole = res_forces[2]
-            
+
             # print(F.shape)
-            loss = (
-                mse_sum(E, E_pred)
-            ) / N_atoms
-            + mse_sum_forces(F, F_pred) / N 
-            #+ mse_sum_dipole(dipole, dipole_pred)
+            loss = (mse_sum(E, E_pred)) / N_atoms
+            +mse_sum_forces(F, F_pred) / N
+            # + mse_sum_dipole(dipole, dipole_pred)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             learning_rate = optimizer.param_groups[0]["lr"]
 
-        #rmse, force_rmse = compute_rmse_dataloader(validation_dataloader, model)
+        # rmse, force_rmse = compute_rmse_dataloader(validation_dataloader, model)
         rmse, force_rmse = compute_rmse(validation, model)
         rmse_sum = rmse + force_rmse
-        
+
         if scheduler.is_better(rmse_sum, scheduler.best):
             model.save(BEST_POINT)
         scheduler.step(rmse_sum)
@@ -284,8 +273,8 @@ def compute_rmse(batches, model):
     for batch in batches:
         N = batch.N
         N_atoms = len(batch.Z)
-        #print(batch.idx_i)
-        #print(batch.idx_j)
+        # print(batch.idx_i)
+        # print(batch.idx_j)
         # res = model.energy(Z=batch.Z,Q=batch.Q,S=batch.S,R=batch.R,idx_i=batch.idx_i,idx_j=batch.idx_j,batch_seg=batch.batch_seg,num_batch=N)
         res = model.energy_and_forces(
             Z=batch.Z,
@@ -349,9 +338,8 @@ def compute_rmse_dataloader(dataloader, model):
 
 
 if __name__ == "__main__":
-    torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    #train() # constructs all batches at once, memory intensive
-    #train_tabular() # trains from df directly 
-    
-    train_new() # train from converted molecules dataset w/ batches
-    
+    torch.multiprocessing.set_start_method("spawn")  # good solution !!!!
+    # train() # constructs all batches at once, memory intensive
+    # train_tabular() # trains from df directly
+
+    train_new()  # train from converted molecules dataset w/ batches

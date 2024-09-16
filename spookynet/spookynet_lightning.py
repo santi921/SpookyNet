@@ -454,6 +454,7 @@ class SpookyNetLightning(pl.LightningModule):
         self.val_E_rl2.cuda()
         self.val_F_l1.cuda()
         self.val_F_rl2.cuda()
+        
 
         self.test_E_l1.cuda()
         self.test_E_rl2.cuda()

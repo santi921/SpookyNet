@@ -60,7 +60,7 @@ def load_batches(
         force = row["gradient"]
         # flatten the force list
         force = [sublist for sublist in force]
-        energy = row["energy"]
+        energy = row["relative_energy"]
 
         batch.Z.extend(elem)
         batch.R.extend(pos)
@@ -108,7 +108,7 @@ def load_dataset(
         elem = [i[0] for i in pos_elem_list]
         pos = [i[1] for i in pos_elem_list]
         force = row["gradient"]
-        energy = row["energy"]
+        energy = row["relative_energy"]
         charge = row["molecule"]["charge"]
         spin = row["molecule"]["spin_multiplicity"]
 
