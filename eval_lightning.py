@@ -163,10 +163,10 @@ def compute_rmse_dataloader(dataloader, model, dipole=False):
         "E_mae_per_atom": total_mae / count_atoms,
         "F_mae_per_atom": total_forces_mae / count_atoms,
         "E_mean_per_cent_absolute_error": compute_rel_rmse(
-            np.cat(E_dev_list), np.cat(E_label_list)
+            np.concatenate(E_dev_list), np.concatenate(E_label_list)
         ),
         "F_mean_per_cent_absolute_error": compute_rel_rmse(
-            np.cat(F_dev_list), np.cat(F_label_list)
+            np.concatenate(F_dev_list), np.concatenate(F_label_list)
         ),
     }
     return ret_dict
