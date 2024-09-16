@@ -137,10 +137,16 @@ def compute_rmse_dataloader(dataloader, model, dipole=False):
         total_forces_mae += mae_sum_forces(F_true, F_pred).item()
 
         # add to list for relative error
-        #E_dev_list.append(E_pred - E_true)
-        #E_label_list.append(E_true)
-        #F_dev_list.append(F_pred - F_true)
-        #F_label_list.append(F_true)
+        dev_E = E_pred - E_true
+        dev_F = F_pred - F_true
+        # move to numpy 
+        dev_E = dev_E.detach().numpy()
+        dev_F = dev_F.detach().numpy()
+
+        E_dev_list.append(dev_E)
+        E_label_list.append(E_true.detach().numpy())
+        F_dev_list.append(dev_F)
+        F_label_list.append(F_true.detach().numpy())
 
         count += N
         count_atoms += N_atoms
