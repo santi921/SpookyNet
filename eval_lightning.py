@@ -13,7 +13,7 @@ torch.set_float32_matmul_precision("high")  # might have to disable on older GPU
 def eval_tabular():
 
     dipole = False
-    batch_size = 128
+    batch_size = 512
     model_path = "./test/model_lightning_transfer_epoch=30-val_loss=2.3368.ckpt"
 
     # load model here instead
@@ -72,8 +72,8 @@ def eval_tabular():
     print(res_test)
 
 def compute_rel_rmse(delta, target):
-    target_norm = torch.sqrt(torch.mean(torch.square(target))).item()
-    return torch.sqrt(torch.mean(torch.square(delta))) / (target_norm + 1e-9) * 100
+    target_norm = np.sqrt(np.mean(np.square(target))).item()
+    return np.sqrt(np.mean(np.square(delta))) / (target_norm + 1e-9) * 100
 
 
 def compute_rmse_dataloader(dataloader, model, dipole=False):
@@ -163,11 +163,11 @@ def compute_rmse_dataloader(dataloader, model, dipole=False):
         "E_mae_per_atom": total_mae / count_atoms,
         "F_mae_per_atom": total_forces_mae / count_atoms,
         "E_mean_per_cent_absolute_error": compute_rel_rmse(
-            torch.cat(E_dev_list), torch.cat(E_label_list)
-        ).detach().cpu().numpy(),
+            np.cat(E_dev_list), np.cat(E_label_list)
+        ),
         "F_mean_per_cent_absolute_error": compute_rel_rmse(
-            torch.cat(F_dev_list), torch.cat(F_label_list)
-        ).detach().cpu().numpy(),
+            np.cat(F_dev_list), np.cat(F_label_list)
+        ),
     }
     return ret_dict
 
