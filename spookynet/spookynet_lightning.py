@@ -1439,21 +1439,7 @@ class SpookyNetLightning(pl.LightningModule):
 
     def shared_step(self, batch, mode):
 
-        """
-        # batch object
-        N = batch.N
-        N_atoms = len(batch.Z)
-        Z = batch.Z
-        Q = batch.Q
-        S = batch.S
-        R = batch.R
-        idx_i = batch.idx_i
-        idx_j = batch.idx_j
-        batch_seg = batch.batch_seg
-        E = batch.E
-        F = batch.F
-        D = batch.D
-        """
+
         # batch dict
         N = batch["N"]
         N_atoms = len(batch["Z"])
@@ -1536,7 +1522,7 @@ class SpookyNetLightning(pl.LightningModule):
 
         self.log(
             f"{mode}_E_l1_per_atom",
-            E_per_atom / N_atoms,
+            E_per_atom ,
             on_step=False,
             on_epoch=True,
             prog_bar=not show_prog,

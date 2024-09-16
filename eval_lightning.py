@@ -2,7 +2,7 @@ import math
 import torch
 import numpy as np
 import pandas as pd
-
+from tqdm import tqdm
 from spookynet import SpookyNetLightning
 from spookynet.data.dataset import SpookyDatasetTabular
 from spookynet.data.dataloader import DataloaderTabular
@@ -21,13 +21,17 @@ def eval_tabular():
 
     model = SpookyNetLightning.load_from_checkpoint(
         checkpoint_path=model_path
-    ).to(torch.float32).cuda()
+    ).to(torch.float32).cpu()
+    
+    # important!
+    model.eval()
     
     print("... loaded model!")
     
-    df = pd.read_json("./data/train_debug.json")
-    df_val = pd.read_json("./data/train_debug.json")
-    df_test = pd.read_json("./data/train_debug.json")
+    df = pd.read_json("./data/train_chunk_5_radqm9_20240807.json")
+    df_val = pd.read_json("./data/train_chunk_5_radqm9_20240807.json")
+    df_test = pd.read_json("./data/train_chunk_5_radqm9_20240807.json")
+
     dataset = SpookyDatasetTabular(df, dipole=dipole)
     dataset_val = SpookyDatasetTabular(df_val, dipole=dipole)
     dataset_test = SpookyDatasetTabular(df_test, dipole=dipole)
@@ -35,9 +39,10 @@ def eval_tabular():
     training_dataloader = DataloaderTabular(
         dataset,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=0,
         persistent_workers=False,
+        device=torch.device("cpu")
     )
     validation_dataloader = DataloaderTabular(
         dataset_val,
@@ -45,6 +50,7 @@ def eval_tabular():
         shuffle=False,
         num_workers=0,
         persistent_workers=False,
+        device=torch.device("cpu")
     )
 
     test_dataloader = DataloaderTabular(
@@ -53,12 +59,15 @@ def eval_tabular():
         shuffle=False,
         num_workers=0,
         persistent_workers=False,
+        device=torch.device("cpu")
     )
 
     res_train = compute_rmse_dataloader(training_dataloader, model)
     print(res_train)
+    
     res_val = compute_rmse_dataloader(validation_dataloader, model)
     print(res_val)
+    
     res_test = compute_rmse_dataloader(test_dataloader, model)
     print(res_test)
 
@@ -67,7 +76,7 @@ def compute_rel_rmse(delta, target):
     return torch.sqrt(torch.mean(torch.square(delta))) / (target_norm + 1e-9) * 100
 
 
-def compute_rmse_dataloader(dataloader, model):
+def compute_rmse_dataloader(dataloader, model, dipole=False):
 
     mse_sum = torch.nn.MSELoss(reduction="sum")
     mse_sum_forces = torch.nn.MSELoss(reduction="sum")
@@ -88,26 +97,37 @@ def compute_rmse_dataloader(dataloader, model):
     count_atoms = 0
     model.eval()
 
-    for batch in dataloader:
+    for batch in tqdm(dataloader):
+        
         N = batch["N"]
         N_atoms = len(batch["Z"])
+        Z = batch["Z"]
+        Q = batch["Q"]
+        S = batch["S"]
+        R = batch["R"]
+        idx_i = batch["idx_i"]
+        idx_j = batch["idx_j"]
+        batch_seg = batch["batch_seg"]
+        E = batch["E"]
+        F = batch["F"]
+
         res_forces = model.energy_and_forces(
-            Z=batch["Z"],
-            Q=batch["Q"],
-            S=batch["S"],
-            R=batch["R"],
-            idx_i=batch["idx_i"],
-            idx_j=batch["idx_j"],
-            batch_seg=batch["batch_seg"],
+            Z=Z,
+            Q=Q,
+            S=S,
+            R=R,
+            idx_i=idx_i,
+            idx_j=idx_j,
+            batch_seg=batch_seg,
             num_batch=N,
             create_graph=True
-            # use_dipole=True
+            #use_dipole=dipole
         )
+
+        
+        # sum over pairings
         E_pred = res_forces[0]
         F_pred = res_forces[1]
-        dipole_pred = res_forces[5]
-
-        # sum over pairings
         E_true = batch["E"]
         F_true = batch["F"]
 
@@ -117,10 +137,10 @@ def compute_rmse_dataloader(dataloader, model):
         total_forces_mae += mae_sum_forces(F_true, F_pred).item()
 
         # add to list for relative error
-        E_dev_list.append(E_pred - E_true)
-        E_label_list.append(E_true)
-        F_dev_list.append(F_pred - F_true)
-        F_label_list.append(F_true)
+        #E_dev_list.append(E_pred - E_true)
+        #E_label_list.append(E_true)
+        #F_dev_list.append(F_pred - F_true)
+        #F_label_list.append(F_true)
 
         count += N
         count_atoms += N_atoms
@@ -146,5 +166,5 @@ def compute_rmse_dataloader(dataloader, model):
     return ret_dict
 
 if __name__ == "__main__":
-
+    #torch.multiprocessing.set_start_method('spawn')
     eval_tabular()  # trains from df directly
