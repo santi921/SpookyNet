@@ -5,6 +5,8 @@ from spookynet.data.utils import elem_to_num, get_idx
 # import lightngin module 
 from pytorch_lightning import LightningModule
 
+device = torch.device("cuda")
+
 class SpookyBatch:
 
 
@@ -257,7 +259,6 @@ def collate_tabular(samples):
 
 
 
-
 def collate_tabular_no_dipole(samples):
 
     # make dataframe from samples
@@ -317,7 +318,6 @@ def collate_tabular_no_dipole(samples):
         nm += 1
     
     N = nm
-    device = torch.device("cuda")
     
     Z = torch.tensor(
         Z_list, 
@@ -413,7 +413,6 @@ def collate_molecule(samples):
     batch = (
         SpookyBatch()
     ) 
-        
         
     for molecule in molecules:
         

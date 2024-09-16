@@ -2,8 +2,8 @@ import math
 import torch
 import numpy as np
 import pandas as pd
-from spookynet import SpookyNetLightning
 
+from spookynet import SpookyNetLightning
 from spookynet.data.dataset import SpookyDatasetTabular
 from spookynet.data.dataloader import DataloaderTabular
 
@@ -14,14 +14,20 @@ def eval_tabular():
 
     dipole = False
     batch_size = 128
+    model_path = "./test/model_lightning_transfer_epoch=30-val_loss=2.3368.ckpt"
 
     # load model here instead
-    model = SpookyNetLightning(dipole=dipole).to(torch.float32).cuda()
+    #model = SpookyNetLightning(dipole=dipole).to(torch.float32).cuda()
 
-    df = pd.read_json("./train_chunk_5_radqm9_20240807.json")
-    df_val = pd.read_json("./train_chunk_5_radqm9_20240807.json")
-    df_test = pd.read_json("./train_chunk_5_radqm9_20240807.json")
-
+    model = SpookyNetLightning.load_from_checkpoint(
+        checkpoint_path=model_path
+    ).to(torch.float32).cuda()
+    
+    print("... loaded model!")
+    
+    df = pd.read_json("./data/train_debug.json")
+    df_val = pd.read_json("./data/train_debug.json")
+    df_test = pd.read_json("./data/train_debug.json")
     dataset = SpookyDatasetTabular(df, dipole=dipole)
     dataset_val = SpookyDatasetTabular(df_val, dipole=dipole)
     dataset_test = SpookyDatasetTabular(df_test, dipole=dipole)
@@ -50,13 +56,15 @@ def eval_tabular():
     )
 
     res_train = compute_rmse_dataloader(training_dataloader, model)
+    print(res_train)
     res_val = compute_rmse_dataloader(validation_dataloader, model)
+    print(res_val)
     res_test = compute_rmse_dataloader(test_dataloader, model)
-
+    print(res_test)
 
 def compute_rel_rmse(delta, target):
-    target_norm = np.sqrt(np.mean(np.square(target))).item()
-    return np.sqrt(np.mean(np.square(delta))) / (target_norm + 1e-9) * 100
+    target_norm = torch.sqrt(torch.mean(torch.square(target))).item()
+    return torch.sqrt(torch.mean(torch.square(delta))) / (target_norm + 1e-9) * 100
 
 
 def compute_rmse_dataloader(dataloader, model):
@@ -81,16 +89,16 @@ def compute_rmse_dataloader(dataloader, model):
     model.eval()
 
     for batch in dataloader:
-        N = batch.N
-        N_atoms = len(batch.Z)
+        N = batch["N"]
+        N_atoms = len(batch["Z"])
         res_forces = model.energy_and_forces(
-            Z=batch.Z,
-            Q=batch.Q,
-            S=batch.S,
-            R=batch.R,
-            idx_i=batch.idx_i,
-            idx_j=batch.idx_j,
-            batch_seg=batch.batch_seg,
+            Z=batch["Z"],
+            Q=batch["Q"],
+            S=batch["S"],
+            R=batch["R"],
+            idx_i=batch["idx_i"],
+            idx_j=batch["idx_j"],
+            batch_seg=batch["batch_seg"],
             num_batch=N,
             create_graph=True
             # use_dipole=True
@@ -100,16 +108,19 @@ def compute_rmse_dataloader(dataloader, model):
         dipole_pred = res_forces[5]
 
         # sum over pairings
-        total_mse += mse_sum(batch.E, E_pred).item()
-        total_forces_mse += mse_sum_forces(batch.F, F_pred).item()
-        total_mae += mae_sum(batch.E, E_pred).item()
-        total_forces_mae += mae_sum_forces(batch.F, F_pred).item()
+        E_true = batch["E"]
+        F_true = batch["F"]
+
+        total_mse += mse_sum(E_true, E_pred).item()
+        total_forces_mse += mse_sum_forces(F_true, F_pred).item()
+        total_mae += mae_sum(E_true, E_pred).item()
+        total_forces_mae += mae_sum_forces(F_true, F_pred).item()
 
         # add to list for relative error
-        E_dev_list.append(E_pred - batch.E)
-        E_label_list.append(batch.E)
-        F_dev_list.append(F_pred - batch.F)
-        F_label_list.append(batch.F)
+        E_dev_list.append(E_pred - E_true)
+        E_label_list.append(E_true)
+        F_dev_list.append(F_pred - F_true)
+        F_label_list.append(F_true)
 
         count += N
         count_atoms += N_atoms
@@ -127,14 +138,12 @@ def compute_rmse_dataloader(dataloader, model):
         "F_mae_per_atom": total_forces_mae / count_atoms,
         "E_mean_per_cent_absolute_error": compute_rel_rmse(
             torch.cat(E_dev_list), torch.cat(E_label_list)
-        ),
+        ).detach().cpu().numpy(),
         "F_mean_per_cent_absolute_error": compute_rel_rmse(
             torch.cat(F_dev_list), torch.cat(F_label_list)
-        ),
+        ).detach().cpu().numpy(),
     }
-
-    return math.sqrt(total_mse / count_atoms), math.sqrt(total_forces_mse / count_atoms)
-
+    return ret_dict
 
 if __name__ == "__main__":
 
