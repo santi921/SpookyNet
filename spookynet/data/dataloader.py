@@ -190,7 +190,7 @@ class DataloaderTabular(DataLoader):
                 force = row["gradient"]
                 energy = row["relative_energy"]
                 force = [sublist for sublist in force]
-                dipole.append(row["calc_resp_dipole_moments"])
+                dipole.append(row["resp_dipole_moments"])
 
 
 
@@ -343,7 +343,7 @@ class DataloaderTabular(DataLoader):
                 force = row["gradient"]
                 energy = row["relative_energy"]
                 force = [sublist for sublist in force]
-                #dipole.append(row["calc_resp_dipole_moments"])
+                #dipole.append(row["resp_dipole_moments"])
 
 
 
